@@ -34,7 +34,6 @@ description: |-
 Required:
 
 - `consolidate_deprecated_keychains` (Boolean)
-- `interval_secs` (Number)
 - `tx_priority` (String)
 
 Optional:
@@ -42,5 +41,7 @@ Optional:
 - `cpfp_payouts_after_blocks` (Number)
 - `cpfp_payouts_after_mins` (Number)
 - `force_min_change_sats` (Number)
+- `interval_secs` (Number)
+- `manual` (Boolean)
 
 

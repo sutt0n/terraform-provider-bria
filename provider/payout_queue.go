@@ -38,9 +38,17 @@ func resourcePayoutQueue() *schema.Resource {
 							Type:     schema.TypeBool,
 							Required: true,
 						},
+						"manual": {
+							Type:          schema.TypeBool,
+							Optional:      true,
+							Default:       false,
+							ConflictsWith: []string{"config.0.interval_secs"},
+						},
 						"interval_secs": {
-							Type:     schema.TypeInt,
-							Required: true,
+							Type:          schema.TypeInt,
+							Optional:      true,
+							Default:       0,
+							ConflictsWith: []string{"config.0.manual"},
 						},
 						"cpfp_payouts_after_mins": {
 							Type:     schema.TypeInt,
@@ -71,30 +79,9 @@ func resourcePayoutQueueCreate(d *schema.ResourceData, m interface{}) error {
 	description := d.Get("description").(string)
 	configData := d.Get("config").([]interface{})[0].(map[string]interface{})
 
-	config := &briav1.PayoutQueueConfig{
-		TxPriority:                     briav1.TxPriority(briav1.TxPriority_value[configData["tx_priority"].(string)]),
-		ConsolidateDeprecatedKeychains: configData["consolidate_deprecated_keychains"].(bool),
-	}
-
-	config.Trigger = &briav1.PayoutQueueConfig_IntervalSecs{IntervalSecs: uint32(configData["interval_secs"].(int))}
-
-	if val, ok := configData["cpfp_payouts_after_mins"]; ok {
-		if val.(int) >= 0 {
-			tempVal := uint32(val.(int))
-			config.CpfpPayoutsAfterMins = &tempVal
-		}
-	}
-	if val, ok := configData["cpfp_payouts_after_blocks"]; ok {
-		if val.(int) >= 0 {
-			tempVal := uint32(val.(int))
-			config.CpfpPayoutsAfterBlocks = &tempVal
-		}
-	}
-	if val, ok := configData["force_min_change_sats"]; ok {
-		if val.(int) >= 0 {
-			tempVal := uint64(val.(int))
-			config.ForceMinChangeSats = &tempVal
-		}
+	config, err := buildPayoutQueueConfig(configData)
+	if err != nil {
+		return err
 	}
 
 	res, err := client.CreatePayoutQueue(name, description, config)
@@ -133,8 +120,11 @@ func resourcePayoutQueueRead(d *schema.ResourceData, meta interface{}) error {
 			"consolidate_deprecated_keychains": queue.Config.ConsolidateDeprecatedKeychains,
 		}
 
-		if intervalSecs, ok := queue.Config.Trigger.(*briav1.PayoutQueueConfig_IntervalSecs); ok {
-			config["interval_secs"] = intervalSecs.IntervalSecs
+		switch t := queue.Config.Trigger.(type) {
+		case *briav1.PayoutQueueConfig_Manual:
+			config["manual"] = t.Manual
+		case *briav1.PayoutQueueConfig_IntervalSecs:
+			config["interval_secs"] = t.IntervalSecs
 		}
 
 		if queue.Config.CpfpPayoutsAfterMins != nil {
@@ -168,12 +158,35 @@ func resourcePayoutQueueUpdate(d *schema.ResourceData, m interface{}) error {
 	description := d.Get("description").(string)
 	configData := d.Get("config").([]interface{})[0].(map[string]interface{})
 
+	config, err := buildPayoutQueueConfig(configData)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.UpdatePayoutQueue(queueId, description, config)
+	if err != nil {
+		return fmt.Errorf("error updating Bria payout queue: %w", err)
+	}
+
+	return resourcePayoutQueueRead(d, m)
+}
+
+func buildPayoutQueueConfig(configData map[string]interface{}) (*briav1.PayoutQueueConfig, error) {
 	config := &briav1.PayoutQueueConfig{
 		TxPriority:                     briav1.TxPriority(briav1.TxPriority_value[configData["tx_priority"].(string)]),
 		ConsolidateDeprecatedKeychains: configData["consolidate_deprecated_keychains"].(bool),
 	}
 
-	config.Trigger = &briav1.PayoutQueueConfig_IntervalSecs{IntervalSecs: uint32(configData["interval_secs"].(int))}
+	manual := configData["manual"].(bool)
+	intervalSecs := configData["interval_secs"].(int)
+
+	if manual {
+		config.Trigger = &briav1.PayoutQueueConfig_Manual{Manual: true}
+	} else if intervalSecs > 0 {
+		config.Trigger = &briav1.PayoutQueueConfig_IntervalSecs{IntervalSecs: uint32(intervalSecs)}
+	} else {
+		return nil, fmt.Errorf("either 'manual' must be true or 'interval_secs' must be set")
+	}
 
 	if val, ok := configData["cpfp_payouts_after_mins"]; ok {
 		if val.(int) >= 0 {
@@ -194,12 +207,7 @@ func resourcePayoutQueueUpdate(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
-	_, err := client.UpdatePayoutQueue(queueId, description, config)
-	if err != nil {
-		return fmt.Errorf("error updating Bria payout queue: %w", err)
-	}
-
-	return resourcePayoutQueueRead(d, m)
+	return config, nil
 }
 
 func resourcePayoutQueueDelete(d *schema.ResourceData, meta interface{}) error {

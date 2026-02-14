@@ -33,5 +33,6 @@ description: |-
 Optional:
 
 - `allowed_payout_addresses` (Set of String)
+- `max_payout_sats` (Number)
 
 

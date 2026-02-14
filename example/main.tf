@@ -34,7 +34,7 @@ resource "bria_profile" "restricted" {
   name = "restricted-profile-${random_string.postfix.result}"
   spending_policy {
     allowed_payout_addresses = ["mgWUuj1J1N882jmqFxtDepEC73Rr22E9GU"]
-    max_payout_sats  = 1000000
+    max_payout_sats          = 1000000
   }
 }
 
@@ -118,5 +118,16 @@ resource "bria_payout_queue" "interval" {
     cpfp_payouts_after_blocks        = 2
     cpfp_payouts_after_mins          = 30
     force_min_change_sats            = 100000
+  }
+}
+
+resource "bria_payout_queue" "manual" {
+  name        = "manual-${random_string.postfix.result}"
+  description = "A manual trigger Bria payout queue"
+
+  config {
+    tx_priority                      = "NEXT_BLOCK"
+    consolidate_deprecated_keychains = false
+    manual                           = true
   }
 }
